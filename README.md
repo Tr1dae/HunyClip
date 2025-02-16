@@ -1,15 +1,16 @@
 
 # HunyClip - Video Cropping Tool
 
-HunyClip is a Python-based video cropping tool aimed at Hunyuanvideo dataset preparation
-Supports features like trimming, cropping, and resizing videos. 
+HunyClip is a Python-based video cropping tool aimed at Hunyuanvideo dataset preparation.
+
 
 ![Screenshot](screenshot.jpg) 
 
 ## Features
 
-- **Crop Videos**: Select and crop specific regions of video files.
 - **Trim Videos**: Set trim points and export trimmed clips.
+- **Crop Videos**: Select and crop specific regions of video files.
+- **Duplicate Videos**: Duplicate video entries so multiple cuts can be made from the same source.
 - **Export Options**: Export cropped and uncropped video clips.
 - **Keyboard Shortcuts**: Easily navigate and control the tool using keyboard shortcuts.
 
@@ -30,16 +31,17 @@ Supports features like trimming, cropping, and resizing videos.
       ```
 
 2. **Set Up Virtual Environment**:
+ 
    Run the `install.bat` script to set up the virtual environment and install dependencies:
-     ```bash
-     install.bat
-     ```
+
+   **Alternatively**
+
+   Run the `install_without_venv.bat` script to install dependencies globally:
 
 3. **Run the Application**:
-   After setting up the virtual environment, run the `run.bat` script to start the application:
-     ```bash
-     run.bat
-     ```
+   
+   After installation, run the `run.bat` or `run_without_venv.bat` script to start the application:
+
 
 ## Usage
 
