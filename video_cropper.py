@@ -181,31 +181,39 @@ class VideoCropper(QWidget):
             self.video_files = [f for f in os.listdir(folder) if f.lower().endswith(('.mp4', '.avi', '.mov'))]
             self.video_list.clear()
             self.video_list.addItems(self.video_files)
-    
+            
+            # Initialize trim_points for each video
+            for video_file in self.video_files:
+                video_path = os.path.join(self.folder_path, video_file)
+                if video_path not in self.trim_points:
+                    self.trim_points[video_path] = 0
+
     def load_video(self, item):
         video_path = os.path.join(self.folder_path, item.text())
         self.current_video = video_path
         
+        # Initialize crop_regions and trim_points if not already set
         if video_path not in self.crop_regions:
             self.crop_regions[video_path] = None
-        if video_path not in self.trim_points:
-            self.trim_points[video_path] = 0
         
+        # Open the video and get frame count
         self.cap = cv2.VideoCapture(video_path)
-        
         self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.original_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.original_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
+        # Set the default trim position to the middle of the clip if not already set
+        if video_path not in self.trim_points:
+            self.trim_points[video_path] = self.frame_count // 2  # Default to middle of the clip
+        
+        # Set up the slider and labels
         self.slider.setMaximum(self.frame_count - 1)
         self.slider.setEnabled(True)
-        
-        # Initialize trim point to middle of clip
-        self.trim_points[video_path] = self.frame_count // 2
-        self.slider.setValue(self.trim_points[video_path])
+        self.slider.setValue(self.trim_points[video_path])  # Set slider to saved or default trim position
         self.clip_length_label.setText(f"Clip Length: {self.frame_count}")
         self.update_trim_label()
         
+        # Set the video to the saved trim position
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.trim_points[video_path])
         ret, frame = self.cap.read()
         if ret:
@@ -219,7 +227,7 @@ class VideoCropper(QWidget):
                 w = crop[2] * scale_w
                 h = crop[3] * scale_h
                 self.draw_crop_rectangle(x, y, w, h)
-    
+
     def scrub_video(self, position):
         if self.cap:
             self.trim_points[self.current_video] = int(float(position))
@@ -228,7 +236,7 @@ class VideoCropper(QWidget):
             ret, frame = self.cap.read()
             if ret:
                 self.display_frame(frame)
-    
+
     def update_trim_label(self):
         val = self.slider.value()
         self.trim_point_label.setText(f"Trim Point: {val}")
