@@ -1,5 +1,4 @@
 
-```markdown
 # HunyClip - Video Cropping Tool
 
 HunyClip is a Python-based video cropping tool aimed at Hunyuanvideo dataset preparation
@@ -20,22 +19,23 @@ Supports features like trimming, cropping, and resizing videos.
 - Python 3.8 or higher
 - FFmpeg (Ensure it's installed and added to your system's PATH)
 
+
 ### Steps
 
 1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/Tr1dae/HunyClip.git
-   cd HunyClip
-   ```
+      ```bash
+      git clone https://github.com/Tr1dae/HunyClip.git
+      cd HunyClip
+      ```
 
 2. **Set Up Virtual Environment**:
-   - Run the `install.bat` script to set up the virtual environment and install dependencies:
+   Run the `install.bat` script to set up the virtual environment and install dependencies:
      ```bash
      install.bat
      ```
 
 3. **Run the Application**:
-   - After setting up the virtual environment, run the `run.bat` script to start the application:
+   After setting up the virtual environment, run the `run.bat` script to start the application:
      ```bash
      run.bat
      ```
@@ -63,5 +63,3 @@ Contributions are welcome! Please fork the repository and create a pull request 
 
 - PyQt6 for the GUI framework.
 - OpenCV and FFmpeg for video processing.
-```
-
