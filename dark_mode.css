@@ -1,0 +1,63 @@
+/* dark_mode.css */
+QWidget {
+    background-color: #2E3440;
+    color: #ECEFF4;
+    font-family: 'Segoe UI';
+    font-size: 14px;
+}
+QPushButton {
+    background-color: #4C566A;
+    color: #ECEFF4;
+    border: 1px solid #5E81AC;
+    border-radius: 5px;
+    padding: 5px;
+}
+QPushButton:hover {
+    background-color: #5E81AC;
+}
+QPushButton:pressed {
+    background-color: #81A1C1;
+}
+QListWidget {
+    background-color: #3B4252;
+    color: #ECEFF4;
+    border: 1px solid #5E81AC;
+    border-radius: 5px;
+}
+QSlider::groove:horizontal {
+    background-color: #4C566A;
+    height: 8px;
+    border-radius: 4px;
+}
+QSlider::handle:horizontal {
+    background-color: #81A1C1;
+    width: 18px;
+    height: 18px;
+    margin: -5px 0;
+    border-radius: 9px;
+}
+QLabel {
+    color: #ECEFF4;
+}
+QLineEdit {
+    background-color: #3B4252;
+    color: #ECEFF4;
+    border: 1px solid #5E81AC;
+    border-radius: 5px;
+    padding: 5px;
+}
+QSpinBox {
+    background-color: #3B4252;
+    color: #ECEFF4;
+    border: 1px solid #5E81AC;
+    border-radius: 5px;
+    padding: 5px;
+}
+QCheckBox {
+    color: #ECEFF4;
+}
+QGraphicsView {
+    background-color: #3B4252;
+    border: 1px solid #5E81AC;
+    border-radius: 5px;
+}
