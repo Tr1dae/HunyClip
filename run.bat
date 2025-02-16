@@ -1,6 +1,4 @@
 @echo off
-call venv\Scripts\activate
+echo Running HunyClip...
 python video_cropper.py
-
 pause
-
