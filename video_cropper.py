@@ -10,8 +10,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QMouseEvent
 from PyQt6.QtCore import Qt, QRectF, QTimer
-from PyQt6.QtGui import QIcon 
-
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QMessageBox
 
 class VideoCropper(QWidget):
     def __init__(self):
@@ -22,7 +22,7 @@ class VideoCropper(QWidget):
         # Set the window icon
         self.setWindowIcon(QIcon("favicon.ico"))    
         self.folder_path = ""
-        self.video_files = []
+        self.video_files = []  # Now stores dicts instead of strings
         self.current_video = None
         self.crop_regions = {} 
         self.current_rect = None 
@@ -69,6 +69,11 @@ class VideoCropper(QWidget):
         self.video_list = QListWidget()
         self.video_list.itemClicked.connect(self.load_video)
         left_panel.addWidget(self.video_list, 1)
+        
+        # Duplicate button
+        self.duplicate_button = QPushButton("Duplicate Clip")
+        self.duplicate_button.clicked.connect(self.duplicate_clip)
+        left_panel.addWidget(self.duplicate_button)
         
         # Info labels
         self.clip_length_label = QLabel("Clip Length: 0")
@@ -135,6 +140,36 @@ class VideoCropper(QWidget):
         self.graphics_view.viewport().setMouseTracking(True)
         self.graphics_view.viewport().installEventFilter(self)
     
+    def duplicate_clip(self):
+        current_item = self.video_list.currentItem()
+        if not current_item:
+            return
+            
+        current_idx = self.video_list.row(current_item)
+        original_entry = self.video_files[current_idx]
+        
+        # Find next available copy number
+        new_copy = original_entry['copy_number'] + 1
+        base_name, ext = os.path.splitext(original_entry['display_name'])
+        new_display = f"{base_name}_{new_copy}{ext}"
+        
+        # Create new entry
+        new_entry = {
+            'original_path': original_entry['original_path'],
+            'display_name': new_display,
+            'copy_number': new_copy
+        }
+        self.video_files.append(new_entry)
+        self.video_list.addItem(new_display)
+        
+        # Copy existing settings
+        self.crop_regions[new_display] = self.crop_regions.get(
+            original_entry['display_name'], None
+        )
+        self.trim_points[new_display] = self.trim_points.get(
+            original_entry['display_name'], 0
+        )
+    
     def eventFilter(self, source, event):
         if source is self.graphics_view.viewport():
             if event.type() == QMouseEvent.Type.MouseButtonPress:
@@ -178,28 +213,42 @@ class VideoCropper(QWidget):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
         if folder:
             self.folder_path = folder
-            self.video_files = [f for f in os.listdir(folder) if f.lower().endswith(('.mp4', '.avi', '.mov'))]
-            self.video_list.clear()
-            self.video_list.addItems(self.video_files)
+            files = [f for f in os.listdir(folder) 
+                    if f.lower().endswith(('.mp4', '.avi', '.mov'))]
             
-            # Initialize trim_points for each video
-            for video_file in self.video_files:
-                video_path = os.path.join(self.folder_path, video_file)
-                if video_path not in self.trim_points:
-                    self.trim_points[video_path] = 0
+            # Initialize video entries
+            self.video_files = [{
+                'original_path': os.path.join(folder, f),
+                'display_name': f,
+                'copy_number': 0
+            } for f in files]
+            
+            self.video_list.clear()
+            self.video_list.addItems([e['display_name'] for e in self.video_files])
+            
+            # Initialize trim/crop for new entries
+            for entry in self.video_files:
+                if entry['display_name'] not in self.trim_points:
+                    self.trim_points[entry['display_name']] = 0
+                if entry['display_name'] not in self.crop_regions:
+                    self.crop_regions[entry['display_name']] = None
 
     def load_video(self, item):
-        video_path = os.path.join(self.folder_path, item.text())
-
+        idx = self.video_list.row(item)
+        video_entry = self.video_files[idx]
+        video_path = video_entry['original_path']
+        display_name = video_entry['display_name']
+        
+        # Use display name as key
+        self.current_video = display_name
+        
         # Release previous video if needed
         if hasattr(self, 'cap') and self.cap:
             self.cap.release()
 
-        self.current_video = video_path
-
         # Initialize crop_regions if not already set
-        if video_path not in self.crop_regions:
-            self.crop_regions[video_path] = None
+        if display_name not in self.crop_regions:
+            self.crop_regions[display_name] = None
 
         # Open the video and get frame count
         self.cap = cv2.VideoCapture(video_path)
@@ -213,19 +262,16 @@ class VideoCropper(QWidget):
         self.original_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.original_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        # print(f"Loaded video: {video_path}, Frames: {self.frame_count}")
-
         # Ensure frame count is valid before proceeding
         if self.frame_count <= 0:
             print("Error: Video frame count is 0 or not read correctly.")
             return  
 
         # Enforce a valid trim position
-        if video_path not in self.trim_points or self.trim_points[video_path] <= 0:
-            self.trim_points[video_path] = self.frame_count // 2  # Always default to middle if unset or invalid
+        if display_name not in self.trim_points or self.trim_points[display_name] <= 0:
+            self.trim_points[display_name] = self.frame_count // 2  # Always default to middle if unset or invalid
 
-        trim_frame = self.trim_points[video_path]  # Now this will always be correct
-        # print(f"Final trim position set to: {trim_frame}")
+        trim_frame = self.trim_points[display_name]  # Now this will always be correct
 
         # Set up the slider and labels
         self.slider.setMaximum(self.frame_count - 1)
@@ -247,16 +293,18 @@ class VideoCropper(QWidget):
         else:
             print("Error: Could not read frame at trim point.")
 
-        # Draw crop rectangle if a crop region is set
-        if self.crop_regions[video_path]:
-            crop = self.crop_regions[video_path]
+        # Draw crop rectangle only if a crop region is set for this video
+        if self.crop_regions[display_name]:
+            crop = self.crop_regions[display_name]
             scale_w = self.pixmap_item.pixmap().width() / self.original_width
             scale_h = self.pixmap_item.pixmap().height() / self.original_height
             x, y, w, h = crop[0] * scale_w, crop[1] * scale_h, crop[2] * scale_w, crop[3] * scale_h
             self.draw_crop_rectangle(x, y, w, h)
-
-
-
+        else:
+            # Remove the crop rectangle if no crop is set
+            if self.current_rect:
+                self.scene.removeItem(self.current_rect)
+                self.current_rect = None
 
     def scrub_video(self, position):
         if self.cap:
@@ -298,6 +346,26 @@ class VideoCropper(QWidget):
         if not self.crop_regions:
             return
         
+        # Check if the "Export Uncropped Clips" toggle is disabled
+        if not self.export_uncropped_checkbox.isChecked():
+            # Create a warning popup
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setText("Uncropped clips will not be exported.")
+            msg.setInformativeText("Toggle 'Export Uncropped Clips' to export all clips.")
+            msg.setWindowTitle("Export Warning")
+            
+            # Add "Continue Anyway" and "Return" buttons
+            continue_button = msg.addButton("Continue Anyway", QMessageBox.ButtonRole.AcceptRole)
+            return_button = msg.addButton("Return", QMessageBox.ButtonRole.RejectRole)
+            
+            # Show the popup and wait for user input
+            msg.exec()
+            
+            # If the user clicks "Return", cancel the export
+            if msg.clickedButton() == return_button:
+                return
+        
         output_folder = os.path.join(self.folder_path, "cropped")
         os.makedirs(output_folder, exist_ok=True)
         
@@ -306,9 +374,10 @@ class VideoCropper(QWidget):
             uncropped_folder = os.path.join(self.folder_path, "uncropped")
             os.makedirs(uncropped_folder, exist_ok=True)
         
-        for video_file in self.video_files:
-            video_path = os.path.join(self.folder_path, video_file)
-            crop = self.crop_regions.get(video_path)
+        for entry in self.video_files:
+            video_path = entry['original_path']
+            display_name = entry['display_name']
+            crop = self.crop_regions.get(display_name)
             if not crop:
                 continue
             
@@ -334,11 +403,12 @@ class VideoCropper(QWidget):
                 w -= 1
                           
             # Get trim point and calculate duration
-            trim_start = self.trim_points.get(video_path, 0)
+            trim_start = self.trim_points.get(display_name, 0)
             duration = self.trim_length / fps
             
             # Export cropped video
-            output_path = os.path.join(output_folder, video_file.replace('.', '_cropped.'))
+            output_name = display_name.replace('.', '_cropped.')
+            output_path = os.path.join(output_folder, output_name)
             (
                 ffmpeg
                 .input(video_path, ss=trim_start / fps, t=duration)
@@ -347,18 +417,18 @@ class VideoCropper(QWidget):
                 .output(output_path)
                 .run(overwrite_output=True)
             )
-            print(f"Exported cropped {video_file} to {output_path}")
+            print(f"Exported cropped {display_name} to {output_path}")
             
             # Export uncropped video if the toggle is enabled
             if self.export_uncropped_checkbox.isChecked():
-                uncropped_path = os.path.join(uncropped_folder, video_file)
+                uncropped_path = os.path.join(uncropped_folder, display_name)
                 (
                     ffmpeg
                     .input(video_path, ss=trim_start / fps, t=duration)
                     .output(uncropped_path)
                     .run(overwrite_output=True)
                 )
-                print(f"Exported uncropped {video_file} to {uncropped_path}")
+                print(f"Exported uncropped {display_name} to {uncropped_path}")
     
     def keyPressEvent(self, event):
         key = event.key()
