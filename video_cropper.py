@@ -46,6 +46,7 @@ class VideoCropper(QWidget):
         
         # New property for exporting uncropped clips
         self.export_uncropped = False
+        self.export_image = False
         
         self.initUI()
     
@@ -93,6 +94,10 @@ class VideoCropper(QWidget):
         # Export uncropped toggle
         self.export_uncropped_checkbox = QCheckBox("Export Uncropped Clips")
         left_panel.addWidget(self.export_uncropped_checkbox)
+
+        # Add "Export Image at Trim Point" toggle
+        self.export_image_checkbox = QCheckBox("Export Image at Trim Point")
+        left_panel.addWidget(self.export_image_checkbox)
         
         main_layout.addLayout(left_panel, 1)
         
@@ -385,8 +390,42 @@ class VideoCropper(QWidget):
             orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = cap.get(cv2.CAP_PROP_FPS)
-            cap.release()
             
+            # Get trim point
+            trim_start = self.trim_points.get(display_name, 0)
+            
+            # Export image at trim point if the toggle is enabled
+            if self.export_image_checkbox.isChecked():
+                # Seek to the trim point
+                cap.set(cv2.CAP_PROP_POS_FRAMES, trim_start)
+                ret, frame = cap.read()
+                if ret:
+                    # Save the frame as an image with the same naming convention as cropped videos
+                    base_name = os.path.splitext(display_name)[0]  # Remove original extension
+                    
+                    # Export cropped image (with crop applied)
+                    if crop:
+                        x, y, w, h = crop
+                        # Ensure crop region is within bounds
+                        if x + w > orig_w:
+                            w = orig_w - x
+                        if y + h > orig_h:
+                            h = orig_h - y
+                        # Apply crop to the frame
+                        cropped_frame = frame[y:y+h, x:x+w]
+                        cropped_image_name = f"{base_name}_cropped.png"  # Use _cropped.png suffix
+                        cropped_image_path = os.path.join(output_folder, cropped_image_name)
+                        cv2.imwrite(cropped_image_path, cropped_frame)
+                        print(f"Exported cropped image for {display_name} to {cropped_image_path}")
+                    
+                    # Export uncropped image if the toggle is enabled
+                    if self.export_uncropped_checkbox.isChecked():
+                        uncropped_image_name = f"{base_name}.png"  # Use _uncropped.png suffix
+                        uncropped_image_path = os.path.join(uncropped_folder, uncropped_image_name)
+                        cv2.imwrite(uncropped_image_path, frame)
+                        print(f"Exported uncropped image for {display_name} to {uncropped_image_path}")
+            
+            # Export cropped video
             x, y, w, h = crop
             if x + w > orig_w:
                 w = orig_w - x
@@ -402,8 +441,7 @@ class VideoCropper(QWidget):
             if w % 2 != 0:
                 w -= 1
                           
-            # Get trim point and calculate duration
-            trim_start = self.trim_points.get(display_name, 0)
+            # Calculate duration
             duration = self.trim_length / fps
             
             # Export cropped video
@@ -429,6 +467,8 @@ class VideoCropper(QWidget):
                     .run(overwrite_output=True)
                 )
                 print(f"Exported uncropped {display_name} to {uncropped_path}")
+            
+            cap.release()
     
     def keyPressEvent(self, event):
         key = event.key()
