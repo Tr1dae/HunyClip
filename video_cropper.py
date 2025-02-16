@@ -190,43 +190,73 @@ class VideoCropper(QWidget):
 
     def load_video(self, item):
         video_path = os.path.join(self.folder_path, item.text())
+
+        # Release previous video if needed
+        if hasattr(self, 'cap') and self.cap:
+            self.cap.release()
+
         self.current_video = video_path
-        
-        # Initialize crop_regions and trim_points if not already set
+
+        # Initialize crop_regions if not already set
         if video_path not in self.crop_regions:
             self.crop_regions[video_path] = None
-        
+
         # Open the video and get frame count
         self.cap = cv2.VideoCapture(video_path)
+
+        # Ensure video opened correctly
+        if not self.cap.isOpened():
+            print("Error: Could not open video file.")
+            return  
+
         self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.original_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.original_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        # Set the default trim position to the middle of the clip if not already set
-        if video_path not in self.trim_points:
-            self.trim_points[video_path] = self.frame_count // 2  # Default to middle of the clip
-        
+
+        # print(f"Loaded video: {video_path}, Frames: {self.frame_count}")
+
+        # Ensure frame count is valid before proceeding
+        if self.frame_count <= 0:
+            print("Error: Video frame count is 0 or not read correctly.")
+            return  
+
+        # Enforce a valid trim position
+        if video_path not in self.trim_points or self.trim_points[video_path] <= 0:
+            self.trim_points[video_path] = self.frame_count // 2  # Always default to middle if unset or invalid
+
+        trim_frame = self.trim_points[video_path]  # Now this will always be correct
+        # print(f"Final trim position set to: {trim_frame}")
+
         # Set up the slider and labels
         self.slider.setMaximum(self.frame_count - 1)
         self.slider.setEnabled(True)
-        self.slider.setValue(self.trim_points[video_path])  # Set slider to saved or default trim position
+        self.slider.setValue(trim_frame)
         self.clip_length_label.setText(f"Clip Length: {self.frame_count}")
         self.update_trim_label()
-        
-        # Set the video to the saved trim position
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.trim_points[video_path])
+
+        # Seek the video to the trim position
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, trim_frame)
+
+        # Force frame decoding to ensure it's properly set
+        for _ in range(5):  # Multiple grabs to ensure proper seeking
+            self.cap.grab()
+
         ret, frame = self.cap.read()
         if ret:
             self.display_frame(frame)
-            if self.crop_regions[video_path]:
-                crop = self.crop_regions[video_path]
-                scale_w = self.pixmap_item.pixmap().width() / self.original_width
-                scale_h = self.pixmap_item.pixmap().height() / self.original_height
-                x = crop[0] * scale_w
-                y = crop[1] * scale_h
-                w = crop[2] * scale_w
-                h = crop[3] * scale_h
-                self.draw_crop_rectangle(x, y, w, h)
+        else:
+            print("Error: Could not read frame at trim point.")
+
+        # Draw crop rectangle if a crop region is set
+        if self.crop_regions[video_path]:
+            crop = self.crop_regions[video_path]
+            scale_w = self.pixmap_item.pixmap().width() / self.original_width
+            scale_h = self.pixmap_item.pixmap().height() / self.original_height
+            x, y, w, h = crop[0] * scale_w, crop[1] * scale_h, crop[2] * scale_w, crop[3] * scale_h
+            self.draw_crop_rectangle(x, y, w, h)
+
+
+
 
     def scrub_video(self, position):
         if self.cap:
