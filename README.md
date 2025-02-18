@@ -32,13 +32,9 @@ HunyClip is a Python-based video cropping tool aimed at Hunyuanvideo dataset pre
       cd HunyClip
       ```
 
-2. **Set Up Virtual Environment**:
+2. **Set Up Virtual Environment and Run**:
  
-   Run the `install.bat` script to install dependencies
-
-  3. **Run the Application**:
-   
-     After installation, run the `run.bat`
+   Run the `Start.bat` script to install dependencies and run the script. It's all bundled.
 
 
 ## Usage
