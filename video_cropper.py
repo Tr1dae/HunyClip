@@ -459,9 +459,6 @@ class VideoCropper(QWidget):
             self.longest_edge = 1080
     
     def export_videos(self):
-        if not self.crop_regions:
-            return
-        
         # Check if the "Export Uncropped Clips" toggle is disabled
         if not self.export_uncropped_checkbox.isChecked():
             # Create a warning popup
@@ -494,8 +491,6 @@ class VideoCropper(QWidget):
             video_path = entry['original_path']
             display_name = entry['display_name']
             crop = self.crop_regions.get(display_name)
-            if not crop:
-                continue
             
             # Check if the item is enabled for export
             item = self.video_list.item(self.video_files.index(entry))
@@ -541,37 +536,38 @@ class VideoCropper(QWidget):
                         cv2.imwrite(uncropped_image_path, frame)
                         print(f"Exported uncropped image for {display_name} to {uncropped_image_path}")
             
-            # Export cropped video
-            x, y, w, h = crop
-            if x + w > orig_w:
-                w = orig_w - x
-            if y + h > orig_h:
-                h = orig_h - y
-            
-            # Ensure scaled dimensions are even numbers
-            if self.longest_edge % 2 != 0:
-                self.longest_edge -= 1  # Force even number
+            # Export cropped video if a crop region is set
+            if crop:
+                x, y, w, h = crop
+                if x + w > orig_w:
+                    w = orig_w - x
+                if y + h > orig_h:
+                    h = orig_h - y
+                
+                # Ensure scaled dimensions are even numbers
+                if self.longest_edge % 2 != 0:
+                    self.longest_edge -= 1  # Force even number
 
-            if h % 2 != 0:
-                h -= 1
-            if w % 2 != 0:
-                w -= 1
-                          
-            # Calculate duration
-            duration = self.trim_length / fps
-            
-            # Export cropped video
-            output_name = display_name.replace('.', '_cropped.')
-            output_path = os.path.join(output_folder, output_name)
-            (
-                ffmpeg
-                .input(video_path, ss=trim_start / fps, t=duration)
-                .filter('crop', w, h, x, y)
-                .filter('scale', self.longest_edge, -2)
-                .output(output_path)
-                .run(overwrite_output=True)
-            )
-            print(f"Exported cropped {display_name} to {output_path}")
+                if h % 2 != 0:
+                    h -= 1
+                if w % 2 != 0:
+                    w -= 1
+                            
+                # Calculate duration
+                duration = self.trim_length / fps
+                
+                # Export cropped video
+                output_name = display_name.replace('.', '_cropped.')
+                output_path = os.path.join(output_folder, output_name)
+                (
+                    ffmpeg
+                    .input(video_path, ss=trim_start / fps, t=duration)
+                    .filter('crop', w, h, x, y)
+                    .filter('scale', self.longest_edge, -2)
+                    .output(output_path)
+                    .run(overwrite_output=True)
+                )
+                print(f"Exported cropped {display_name} to {output_path}")
             
             # Export uncropped video if the toggle is enabled
             if self.export_uncropped_checkbox.isChecked():
