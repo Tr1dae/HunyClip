@@ -11,8 +11,10 @@ HunyClip is a Python-based video cropping tool aimed at Hunyuanvideo dataset pre
 - **Trim Videos**: Set trim points and export trimmed clips.
 - **Crop Videos**: Select and crop specific regions of video files.
 - **Duplicate Videos**: Duplicate video entries so multiple cuts can be made from the same source.
+- **Selective Exports**: Load entire folder but only export selected items instead of entire folder.
 - **Export Options**: Export cropped and uncropped video clips along with images for auto-captioning.
 - **Keyboard Shortcuts**: Easily navigate and control the tool using keyboard shortcuts.
+- **Session saves**: Working session states are saved.
 
 ## Installation
 
