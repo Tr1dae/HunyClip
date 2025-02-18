@@ -3,10 +3,11 @@ import os
 import cv2
 import ffmpeg
 import numpy as np
+import json
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QFileDialog, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QListWidget, QSlider, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QLineEdit,
-    QSpinBox, QSizePolicy, QCheckBox
+    QSpinBox, QSizePolicy, QCheckBox, QListWidgetItem
 )
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QMouseEvent
 from PyQt6.QtCore import Qt, QRectF, QTimer
@@ -19,6 +20,7 @@ class VideoCropper(QWidget):
         self.setWindowTitle("HunyClip")
         self.setGeometry(100, 100, 800, 600)
         
+               
         # Set the window icon
         self.setWindowIcon(QIcon("favicon.ico"))    
         self.folder_path = ""
@@ -48,6 +50,21 @@ class VideoCropper(QWidget):
         self.export_uncropped = False
         self.export_image = False
         
+        # Temp file to save session data
+        self.session_file = "session_data.json"
+        
+        # Initialize video_list before loading session
+        self.video_list = QListWidget()
+        left_panel = QVBoxLayout()
+
+        # Video list
+        self.video_list.itemClicked.connect(self.load_video)
+        self.video_list.itemChanged.connect(self.update_list_item_color)  # Connect itemChanged signal
+        left_panel.addWidget(self.video_list, 1)
+        
+        # Load previous session if exists
+        self.load_session()
+        
         self.initUI()
     
     def initUI(self):
@@ -67,7 +84,6 @@ class VideoCropper(QWidget):
         left_panel.addWidget(self.folder_button)
         
         # Video list
-        self.video_list = QListWidget()
         self.video_list.itemClicked.connect(self.load_video)
         left_panel.addWidget(self.video_list, 1)
         
@@ -93,10 +109,12 @@ class VideoCropper(QWidget):
         
         # Export uncropped toggle
         self.export_uncropped_checkbox = QCheckBox("Export Uncropped Clips")
+        self.export_uncropped_checkbox.setChecked(False)  # Default to OFF
         left_panel.addWidget(self.export_uncropped_checkbox)
 
         # Add "Export Image at Trim Point" toggle
         self.export_image_checkbox = QCheckBox("Export Image at Trim Point")
+        self.export_image_checkbox.setChecked(False)  # Default to OFF
         left_panel.addWidget(self.export_image_checkbox)
         
         main_layout.addLayout(left_panel, 1)
@@ -105,7 +123,7 @@ class VideoCropper(QWidget):
         right_panel = QVBoxLayout()
 
         # Keybinding label
-        keybindings_label = QLabel("Click and drag to set crop region.  ||   Shortcuts: |  Z - Preview Trim section  |  X - Next Clip  |  C - Play/Pause")
+        keybindings_label = QLabel("Click and drag to set crop region.  ||   Shortcuts: |  Z - Preview Trim section  |  X - Next Clip  |  C - Play/Pause  | Q/W - Step Trim Left/Right")
         keybindings_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center the text
         keybindings_label.setStyleSheet("font-size: 12px; color: #ECEFF4;")  # Style the label
         right_panel.addWidget(keybindings_label)
@@ -145,6 +163,96 @@ class VideoCropper(QWidget):
         self.graphics_view.viewport().setMouseTracking(True)
         self.graphics_view.viewport().installEventFilter(self)
     
+
+
+
+    def load_session(self):
+        if os.path.exists(self.session_file):
+            with open(self.session_file, 'r') as file:
+                session_data = json.load(file)
+                self.folder_path = session_data.get('folder_path', "")
+                self.video_files = session_data.get('video_files', [])  # Ensure export_enabled is retained
+
+                self.crop_regions = session_data.get('crop_regions', {})
+                self.trim_points = session_data.get('trim_points', {})
+                self.longest_edge = session_data.get('longest_edge', 1024)
+                self.trim_length = session_data.get('trim_length', 60)
+                self.export_uncropped = session_data.get('export_uncropped', False)
+                self.export_image = session_data.get('export_image', False)
+
+                # Restore tickboxes
+                self.video_list.clear()
+                for entry in self.video_files:
+                    self.add_video_item(entry['display_name'], entry.get('export_enabled', False))
+
+                # Only reload folder if it wasn't already stored in session
+                if self.folder_path and os.path.exists(self.folder_path):
+                    self.load_folder_contents()
+
+
+    
+    def save_session(self):
+        # Ensure that the latest checkbox states are stored in self.video_files
+        for i in range(self.video_list.count()):
+            item = self.video_list.item(i)
+            self.video_files[i]['export_enabled'] = item.checkState() == Qt.CheckState.Checked
+
+        session_data = {
+            'folder_path': self.folder_path,
+            'video_files': self.video_files,
+            'crop_regions': self.crop_regions,
+            'trim_points': self.trim_points,
+            'longest_edge': self.longest_edge,
+            'trim_length': self.trim_length,
+            'export_uncropped': self.export_uncropped,
+            'export_image': self.export_image
+        }
+
+        with open(self.session_file, 'w') as file:
+            json.dump(session_data, file)
+
+
+    
+    def closeEvent(self, event):
+        self.save_session()
+        event.accept()
+    
+    def load_folder_contents(self):
+        files = [f for f in os.listdir(self.folder_path) 
+                if f.lower().endswith(('.mp4', '.avi', '.mov'))]
+
+        # Preserve previous settings if they exist
+        previous_video_files = {entry['display_name']: entry for entry in self.video_files}
+
+        self.video_files = []
+        for f in files:
+            display_name = f
+            video_entry = previous_video_files.get(display_name, {
+                'original_path': os.path.join(self.folder_path, f),
+                'display_name': display_name,
+                'copy_number': 0,
+                'export_enabled': False  # Default if not found in session
+            })
+            self.video_files.append(video_entry)
+
+        # Clear and re-add items
+        self.video_list.clear()
+        for entry in self.video_files:
+            self.add_video_item(entry['display_name'], entry['export_enabled'])
+
+        # Restore crop regions and trim points for existing videos
+        for entry in self.video_files:
+            if entry['display_name'] in self.crop_regions:
+                entry['crop_region'] = self.crop_regions[entry['display_name']]
+            if entry['display_name'] in self.trim_points:
+                entry['trim_point'] = self.trim_points[entry['display_name']]
+    
+    def load_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if folder:
+            self.folder_path = folder
+            self.load_folder_contents()
+       
     def duplicate_clip(self):
         current_item = self.video_list.currentItem()
         if not current_item:
@@ -162,10 +270,11 @@ class VideoCropper(QWidget):
         new_entry = {
             'original_path': original_entry['original_path'],
             'display_name': new_display,
-            'copy_number': new_copy
+            'copy_number': new_copy,
+            'export_enabled': True
         }
         self.video_files.append(new_entry)
-        self.video_list.addItem(new_display)
+        self.add_video_item(new_display, True)
         
         # Copy existing settings
         self.crop_regions[new_display] = self.crop_regions.get(
@@ -208,36 +317,29 @@ class VideoCropper(QWidget):
             )
             
             self.draw_crop_rectangle(x1, y1, x2-x1, y2-y1)
+            self.enable_export_for_current_video()  # Enable export when crop is modified
     
     def draw_crop_rectangle(self, x, y, w, h):
         if self.current_rect:
             self.scene.removeItem(self.current_rect)
         self.current_rect = self.scene.addRect(x, y, w, h, QPen(QColor(255, 0, 0)))
-    
-    def load_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
-        if folder:
-            self.folder_path = folder
-            files = [f for f in os.listdir(folder) 
-                    if f.lower().endswith(('.mp4', '.avi', '.mov'))]
-            
-            # Initialize video entries
-            self.video_files = [{
-                'original_path': os.path.join(folder, f),
-                'display_name': f,
-                'copy_number': 0
-            } for f in files]
-            
-            self.video_list.clear()
-            self.video_list.addItems([e['display_name'] for e in self.video_files])
-            
-            # Initialize trim/crop for new entries
-            for entry in self.video_files:
-                if entry['display_name'] not in self.trim_points:
-                    self.trim_points[entry['display_name']] = 0
-                if entry['display_name'] not in self.crop_regions:
-                    self.crop_regions[entry['display_name']] = None
 
+
+    def enable_export_for_current_video(self):
+        current_item = self.video_list.currentItem()
+        if current_item:
+            current_item.setCheckState(Qt.CheckState.Checked)
+            self.update_list_item_color(current_item)
+
+    def update_list_item_color(self, item):
+        idx = self.video_list.row(item)
+        if idx >= 0 and idx < len(self.video_files):
+            self.video_files[idx]['export_enabled'] = item.checkState() == Qt.CheckState.Checked
+        if item.checkState() == Qt.CheckState.Checked:
+            item.setBackground(QColor(100, 150, 100))  # Light green color for enabled items
+        else:
+            item.setBackground(QColor(0, 0, 0, 0))  # Reset to default color (transparent)           
+    
     def load_video(self, item):
         idx = self.video_list.row(item)
         video_entry = self.video_files[idx]
@@ -319,6 +421,15 @@ class VideoCropper(QWidget):
             ret, frame = self.cap.read()
             if ret:
                 self.display_frame(frame)
+            self.enable_export_for_current_video()  # Enable export when trim is modified
+
+    def add_video_item(self, display_name, export_enabled):
+        item = QListWidgetItem(display_name)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(Qt.CheckState.Checked if export_enabled else Qt.CheckState.Unchecked)  # Restore saved checkbox state
+        self.update_list_item_color(item)  # Update color based on state
+        self.video_list.addItem(item)
+
 
     def update_trim_label(self):
         val = self.slider.value()
@@ -384,6 +495,11 @@ class VideoCropper(QWidget):
             display_name = entry['display_name']
             crop = self.crop_regions.get(display_name)
             if not crop:
+                continue
+            
+            # Check if the item is enabled for export
+            item = self.video_list.item(self.video_files.index(entry))
+            if item.checkState() != Qt.CheckState.Checked:
                 continue
             
             cap = cv2.VideoCapture(video_path)
