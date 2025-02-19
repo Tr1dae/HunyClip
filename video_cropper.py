@@ -20,7 +20,6 @@ class VideoCropper(QWidget):
         self.setWindowTitle("HunyClip")
         self.setGeometry(100, 100, 800, 600)
         
-               
         # Set the window icon
         self.setWindowIcon(QIcon("favicon.ico"))    
         self.folder_path = ""
@@ -92,6 +91,11 @@ class VideoCropper(QWidget):
         self.duplicate_button.clicked.connect(self.duplicate_clip)
         left_panel.addWidget(self.duplicate_button)
         
+        # Clear Crop button
+        self.clear_crop_button = QPushButton("Clear Crop")
+        self.clear_crop_button.clicked.connect(self.clear_crop_region)
+        left_panel.addWidget(self.clear_crop_button)
+        
         # Info labels
         self.clip_length_label = QLabel("Clip Length: 0")
         left_panel.addWidget(self.clip_length_label)
@@ -107,6 +111,11 @@ class VideoCropper(QWidget):
         trim_layout.addWidget(self.trim_spin)
         left_panel.addLayout(trim_layout)
         
+        # Export Cropped toggle
+        self.export_cropped_checkbox = QCheckBox("Export Cropped Clips")
+        self.export_cropped_checkbox.setChecked(False)  # Default to OFF
+        left_panel.addWidget(self.export_cropped_checkbox)
+
         # Export uncropped toggle
         self.export_uncropped_checkbox = QCheckBox("Export Uncropped Clips")
         self.export_uncropped_checkbox.setChecked(False)  # Default to OFF
@@ -163,8 +172,13 @@ class VideoCropper(QWidget):
         self.graphics_view.viewport().setMouseTracking(True)
         self.graphics_view.viewport().installEventFilter(self)
     
-
-
+    def clear_crop_region(self):
+        if self.current_video and self.current_video in self.crop_regions:
+            self.crop_regions[self.current_video] = None
+            if self.current_rect:
+                self.scene.removeItem(self.current_rect)
+                self.current_rect = None
+            self.enable_export_for_current_video()  # Update export status
 
     def load_session(self):
         if os.path.exists(self.session_file):
@@ -189,8 +203,6 @@ class VideoCropper(QWidget):
                 if self.folder_path and os.path.exists(self.folder_path):
                     self.load_folder_contents()
 
-
-    
     def save_session(self):
         # Ensure that the latest checkbox states are stored in self.video_files
         for i in range(self.video_list.count()):
@@ -211,8 +223,6 @@ class VideoCropper(QWidget):
         with open(self.session_file, 'w') as file:
             json.dump(session_data, file)
 
-
-    
     def closeEvent(self, event):
         self.save_session()
         event.accept()
@@ -303,27 +313,43 @@ class VideoCropper(QWidget):
         self.end_y = pos.y()
         
         if None not in (self.start_x, self.start_y, self.end_x, self.end_y):
-            x1 = min(self.start_x, self.end_x)
-            y1 = min(self.start_y, self.end_y)
-            x2 = max(self.start_x, self.end_x)
-            y2 = max(self.start_y, self.end_y)
+            # Ensure the crop rectangle stays within the video bounds
+            x1 = max(0, min(self.start_x, self.end_x))  # Clip x1 to 0 or higher
+            y1 = max(0, min(self.start_y, self.end_y))  # Clip y1 to 0 or higher
+            x2 = min(self.pixmap_item.pixmap().width(), max(self.start_x, self.end_x))  # Clip x2 to video width
+            y2 = min(self.pixmap_item.pixmap().height(), max(self.start_y, self.end_y))  # Clip y2 to video height
             
+            # Ensure the crop rectangle has a valid width and height
+            w = max(0, x2 - x1)  # Width cannot be negative
+            h = max(0, y2 - y1)  # Height cannot be negative
+            
+            # If the crop rectangle is too small, skip it
+            if w < 10 or h < 10:  # Minimum size threshold (adjust as needed)
+                print("Crop region is too small. Please select a larger area.")
+                return
+            
+            # Scale the crop region to the original video dimensions
             scale_w = self.original_width / self.pixmap_item.pixmap().width()
             scale_h = self.original_height / self.pixmap_item.pixmap().height()
             
             self.crop_regions[self.current_video] = (
                 int(x1 * scale_w), int(y1 * scale_h),
-                int((x2 - x1) * scale_w), int((y2 - y1) * scale_h)
+                int(w * scale_w), int(h * scale_h)
             )
             
-            self.draw_crop_rectangle(x1, y1, x2-x1, y2-y1)
+            # Draw the crop rectangle on the screen
+            self.draw_crop_rectangle(x1, y1, w, h)
             self.enable_export_for_current_video()  # Enable export when crop is modified
     
     def draw_crop_rectangle(self, x, y, w, h):
         if self.current_rect:
             self.scene.removeItem(self.current_rect)
+        
+        # Ensure the rectangle stays within the video bounds
+        x = max(0, min(x, self.pixmap_item.pixmap().width() - w))
+        y = max(0, min(y, self.pixmap_item.pixmap().height() - h))
+        
         self.current_rect = self.scene.addRect(x, y, w, h, QPen(QColor(255, 0, 0)))
-
 
     def enable_export_for_current_video(self):
         current_item = self.video_list.currentItem()
@@ -430,7 +456,6 @@ class VideoCropper(QWidget):
         self.update_list_item_color(item)  # Update color based on state
         self.video_list.addItem(item)
 
-
     def update_trim_label(self):
         val = self.slider.value()
         self.trim_point_label.setText(f"Trim Point: {val}")
@@ -461,23 +486,44 @@ class VideoCropper(QWidget):
     def export_videos(self):
         # Check if the "Export Uncropped Clips" toggle is disabled
         if not self.export_uncropped_checkbox.isChecked():
-            # Create a warning popup
+            # Create a warning popup for uncropped videos
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Warning)
             msg.setText("Uncropped clips will not be exported.")
             msg.setInformativeText("Toggle 'Export Uncropped Clips' to export all clips.")
             msg.setWindowTitle("Export Warning")
-            
+
             # Add "Continue Anyway" and "Return" buttons
             continue_button = msg.addButton("Continue Anyway", QMessageBox.ButtonRole.AcceptRole)
             return_button = msg.addButton("Return", QMessageBox.ButtonRole.RejectRole)
-            
+
             # Show the popup and wait for user input
             msg.exec()
-            
+
             # If the user clicks "Return", cancel the export
             if msg.clickedButton() == return_button:
                 return
+
+        # Now check for the cropped checkbox
+        if not self.export_cropped_checkbox.isChecked():
+            # Create a warning popup for cropped videos
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setText("Cropped clips will not be exported.")
+            msg.setInformativeText("Toggle 'Export Cropped Clips' to export cropped clips.")
+            msg.setWindowTitle("Export Warning")
+
+            # Add "Continue Anyway" and "Return" buttons
+            continue_button = msg.addButton("Continue Anyway", QMessageBox.ButtonRole.AcceptRole)
+            return_button = msg.addButton("Return", QMessageBox.ButtonRole.RejectRole)
+
+            # Show the popup and wait for user input
+            msg.exec()
+
+            # If the user clicks "Return", cancel the export
+            if msg.clickedButton() == return_button:
+                return
+
         
         output_folder = os.path.join(self.folder_path, "cropped")
         os.makedirs(output_folder, exist_ok=True)
@@ -505,6 +551,9 @@ class VideoCropper(QWidget):
             # Get trim point
             trim_start = self.trim_points.get(display_name, 0)
             
+            # Calculate duration for both cropped and uncropped videos
+            duration = self.trim_length / fps  # Duration is always calculated
+            
             # Export image at trim point if the toggle is enabled
             if self.export_image_checkbox.isChecked():
                 # Seek to the trim point
@@ -518,12 +567,16 @@ class VideoCropper(QWidget):
                     if crop:
                         x, y, w, h = crop
                         # Ensure crop region is within bounds
-                        if x + w > orig_w:
-                            w = orig_w - x
-                        if y + h > orig_h:
-                            h = orig_h - y
+                        if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > orig_w or y + h > orig_h:
+                            print(f"Invalid crop region for {display_name}: x={x}, y={y}, w={w}, h={h}")
+                            continue  # Skip this frame if the crop region is invalid
+                        
                         # Apply crop to the frame
                         cropped_frame = frame[y:y+h, x:x+w]
+                        if cropped_frame.size == 0:
+                            print(f"Empty crop region for {display_name}: x={x}, y={y}, w={w}, h={h}")
+                            continue  # Skip this frame if the crop region is empty
+                        
                         cropped_image_name = f"{base_name}_cropped.png"  # Use _cropped.png suffix
                         cropped_image_path = os.path.join(output_folder, cropped_image_name)
                         cv2.imwrite(cropped_image_path, cropped_frame)
@@ -537,37 +590,34 @@ class VideoCropper(QWidget):
                         print(f"Exported uncropped image for {display_name} to {uncropped_image_path}")
             
             # Export cropped video if a crop region is set
-            if crop:
+            if self.export_cropped_checkbox.isChecked() and crop:
                 x, y, w, h = crop
-                if x + w > orig_w:
-                    w = orig_w - x
-                if y + h > orig_h:
-                    h = orig_h - y
-                
-                # Ensure scaled dimensions are even numbers
-                if self.longest_edge % 2 != 0:
-                    self.longest_edge -= 1  # Force even number
+                # Ensure crop region is within bounds
+                if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > orig_w or y + h > orig_h:
+                    print(f"Invalid crop region for {display_name}: x={x}, y={y}, w={w}, h={h}")
+                else:
+                    # Ensure scaled dimensions are even numbers
+                    if self.longest_edge % 2 != 0:
+                        self.longest_edge -= 1  # Force even number
 
-                if h % 2 != 0:
-                    h -= 1
-                if w % 2 != 0:
-                    w -= 1
-                            
-                # Calculate duration
-                duration = self.trim_length / fps
-                
-                # Export cropped video
-                output_name = display_name.replace('.', '_cropped.')
-                output_path = os.path.join(output_folder, output_name)
-                (
-                    ffmpeg
-                    .input(video_path, ss=trim_start / fps, t=duration)
-                    .filter('crop', w, h, x, y)
-                    .filter('scale', self.longest_edge, -2)
-                    .output(output_path)
-                    .run(overwrite_output=True)
-                )
-                print(f"Exported cropped {display_name} to {output_path}")
+                    if h % 2 != 0:
+                        h -= 1
+                    if w % 2 != 0:
+                        w -= 1
+                                    
+                    # Export cropped video
+                    output_name = display_name.replace('.', '_cropped.')
+                    output_path = os.path.join(output_folder, output_name)
+                    (
+                        ffmpeg
+                        .input(video_path, ss=trim_start / fps, t=duration)
+                        .filter('crop', w, h, x, y)
+                        .filter('scale', self.longest_edge, -2)
+                        .output(output_path)
+                        .run(overwrite_output=True)
+                    )
+                    print(f"Exported cropped {display_name} to {output_path}")
+
             
             # Export uncropped video if the toggle is enabled
             if self.export_uncropped_checkbox.isChecked():
@@ -581,7 +631,7 @@ class VideoCropper(QWidget):
                 print(f"Exported uncropped {display_name} to {uncropped_path}")
             
             cap.release()
-    
+
     def keyPressEvent(self, event):
         key = event.key()
         if key == Qt.Key.Key_Z:
@@ -669,6 +719,11 @@ if __name__ == "__main__":
         dark_stylesheet = file.read()
     app.setStyleSheet(dark_stylesheet)
     
-    window = VideoCropper()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        window = VideoCropper()
+        window.show()
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        input("Press Enter to exit...")  # Keep the terminal open
+        sys.exit(1)
