@@ -107,6 +107,7 @@ class VideoCropper(QWidget):
         trim_layout.addWidget(QLabel("Trim Length (frames):"))
         self.trim_spin = QSpinBox()
         self.trim_spin.setValue(60)
+        self.trim_spin.setMaximum(999)
         self.trim_spin.valueChanged.connect(lambda v: setattr(self, 'trim_length', v))
         trim_layout.addWidget(self.trim_spin)
         left_panel.addLayout(trim_layout)
