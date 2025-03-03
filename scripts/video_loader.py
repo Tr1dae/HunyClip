@@ -12,30 +12,50 @@ class VideoLoader:
         folder = QFileDialog.getExistingDirectory(self.main_app, "Select Folder")
         if folder:
             self.main_app.folder_path = folder
-            self.load_folder_contents()
+            # Check if we already have saved session data for this folder.
+            if folder in self.main_app.folder_sessions:
+                self.main_app.video_files = self.main_app.folder_sessions[folder]
+                self.refresh_video_list()
+            else:
+                self.load_folder_contents()
 
     def load_folder_contents(self):
-        files = [f for f in os.listdir(self.main_app.folder_path) if f.lower().endswith(('.mp4', '.avi', '.mov'))]
-        # Preserve previous settings if any
-        previous_videos = {entry["display_name"]: entry for entry in self.main_app.video_files} if self.main_app.video_files else {}
-        self.main_app.video_files = []
+        files = [f for f in os.listdir(self.main_app.folder_path) 
+                if f.lower().endswith(('.mp4', '.avi', '.mov'))]
+        
+        # Use saved session data for this folder if available.
+        previous_videos = {}
+        if self.main_app.folder_path in self.main_app.folder_sessions:
+            previous_videos = {
+                entry["display_name"]: entry 
+                for entry in self.main_app.folder_sessions[self.main_app.folder_path]
+            }
+        
+        new_video_files = []
         for f in files:
             display_name = f
-            # If this video was loaded previously, preserve its settings.
+            # If this video was loaded previously in this folder, preserve its settings.
             video_entry = previous_videos.get(display_name, {
                 "original_path": os.path.join(self.main_app.folder_path, f),
                 "display_name": display_name,
                 "copy_number": 0,
                 "export_enabled": False  # Default state
             })
-            self.main_app.video_files.append(video_entry)
-        # Append any duplicate entries that were saved in a previous session.
+            new_video_files.append(video_entry)
+        
+        # Append any duplicate entries (saved previously) that aren’t in the file list.
         for display_name, entry in previous_videos.items():
             if display_name not in files:
-                self.main_app.video_files.append(entry)
+                new_video_files.append(entry)
+        
+        self.main_app.video_files = new_video_files
+        # Save this folder's state.
+        self.main_app.folder_sessions[self.main_app.folder_path] = new_video_files
+        
         self.main_app.video_list.clear()
         for entry in self.main_app.video_files:
             self.add_video_item(entry["display_name"])
+        
         self.save_session()
 
     def add_video_item(self, display_name):
@@ -60,6 +80,10 @@ class VideoLoader:
             item.setBackground(QColor(0, 100, 0))
         else:
             item.setBackground(Qt.GlobalColor.transparent)
+        
+        # Save the session immediately after updating the state.
+        self.save_session()
+
 
     def load_video(self, item):
         idx = self.main_app.video_list.row(item)
@@ -111,27 +135,41 @@ class VideoLoader:
                 self.main_app.scene.removeItem(self.main_app.current_rect)
                 self.main_app.current_rect = None
 
+    def refresh_video_list(self):
+        self.main_app.video_list.clear()
+        for entry in self.main_app.video_files:
+            self.add_video_item(entry["display_name"])
+
     def load_session(self):
         if os.path.exists(self.session_file):
             with open(self.session_file, "r") as file:
                 session_data = json.load(file)
                 self.main_app.folder_path = session_data.get("folder_path", "")
                 self.main_app.video_files = session_data.get("video_files", [])
+                self.main_app.folder_sessions = session_data.get("folder_sessions", {})
                 self.main_app.crop_regions = session_data.get("crop_regions", {})
                 self.main_app.trim_points = session_data.get("trim_points", {})
                 self.main_app.longest_edge = session_data.get("longest_edge", 1024)
                 self.main_app.trim_length = session_data.get("trim_length", 60)
         if self.main_app.folder_path and os.path.exists(self.main_app.folder_path):
-            self.load_folder_contents()
+            if self.main_app.folder_path in self.main_app.folder_sessions:
+                self.main_app.video_files = self.main_app.folder_sessions[self.main_app.folder_path]
+                self.refresh_video_list()
+            else:
+                self.load_folder_contents()
 
     def save_session(self):
-        # Update each entry's export_enabled flag from the corresponding list item.
+        # Update the export_enabled flag from the UI before saving.
         for i in range(self.main_app.video_list.count()):
             item = self.main_app.video_list.item(i)
             self.main_app.video_files[i]["export_enabled"] = (item.checkState() == Qt.CheckState.Checked)
+        # Update the mapping for the current folder.
+        self.main_app.folder_sessions[self.main_app.folder_path] = self.main_app.video_files
+        
         session_data = {
             "folder_path": self.main_app.folder_path,
             "video_files": self.main_app.video_files,
+            "folder_sessions": self.main_app.folder_sessions,
             "crop_regions": self.main_app.crop_regions,
             "trim_points": self.main_app.trim_points,
             "longest_edge": self.main_app.longest_edge,
