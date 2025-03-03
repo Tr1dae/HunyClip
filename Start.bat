@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 REM Set up a Python virtual environment and run video_cropper.py
 
 REM Variables
-set "PYTHON_SCRIPT=video_cropper.py"
+set "PYTHON_SCRIPT=main.py"
 set "VENV_DIR=venv"
 set "SCRIPT_DIR=%~dp0"
 set "FAST_START=FALSE"
