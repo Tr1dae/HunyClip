@@ -53,6 +53,7 @@ class VideoCropper(QWidget):
         self.trim_modified = False
         
         # Session file
+        self.folder_sessions = {}
         self.session_file = "session_data.json"
         
         # UI widgets
