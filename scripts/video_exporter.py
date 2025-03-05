@@ -42,6 +42,7 @@ class VideoExporter:
             video_path = entry["original_path"]
             display_name = entry["display_name"]
             crop = self.main_app.crop_regions.get(display_name)
+            prefix = self.main_app.export_prefix.strip() if self.main_app.export_prefix else ""
             # Instead of reading the check state from the QListWidget item,
             # use the export_enabled flag stored in the entry.
             if not entry.get("export_enabled", False):
