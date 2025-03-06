@@ -1,4 +1,3 @@
-# video_cropper.py
 import sys, os, cv2, ffmpeg, json, numpy as np
 from scripts.custom_graphics_view import CustomGraphicsView
 from PyQt6.QtWidgets import (
@@ -56,6 +55,9 @@ class VideoCropper(QWidget):
         self.folder_sessions = {}
         self.session_file = "session_data.json"
         
+        # New property for simple caption text.
+        self.simple_caption = ""
+        
         # UI widgets
         self.video_list = QListWidget()
         
@@ -100,8 +102,6 @@ class VideoCropper(QWidget):
         self.video_list.itemChanged.connect(self.loader.update_list_item_color)
         left_panel.addWidget(self.video_list, 1)
 
-
-        
         self.duplicate_button = QPushButton("Duplicate Clip")
         self.duplicate_button.clicked.connect(self.loader.duplicate_clip)
         left_panel.addWidget(self.duplicate_button)
@@ -138,7 +138,6 @@ class VideoCropper(QWidget):
         
         main_layout.addLayout(left_panel, 1)
 
-        # self.video_list = QListWidget()
         self.video_list.setStyleSheet("QListWidget::item:selected { background-color: #3A4F7A; }")
         
         # RIGHT PANEL
@@ -183,10 +182,27 @@ class VideoCropper(QWidget):
         
         self.slider.installEventFilter(self)
         
+        export_settings_layout = QHBoxLayout()
+
+        # Longest Edge Input (Already Exists)
         self.resolution_input = QLineEdit()
         self.resolution_input.setPlaceholderText("Set longest edge (default 1024)")
         self.resolution_input.textChanged.connect(self.set_longest_edge)
-        right_panel.addWidget(self.resolution_input)
+        export_settings_layout.addWidget(self.resolution_input)
+
+        # New Filename Prefix Input
+        self.prefix_input = QLineEdit()
+        self.prefix_input.setPlaceholderText("Filename Replacement (Optional)")
+        self.prefix_input.textChanged.connect(lambda text: setattr(self, "export_prefix", text))
+        export_settings_layout.addWidget(self.prefix_input)
+
+        right_panel.addLayout(export_settings_layout)
+        
+        # New Simple Caption Input placed above the Export button
+        self.caption_input = QLineEdit()
+        self.caption_input.setPlaceholderText("Simple caption (Optional)")
+        self.caption_input.textChanged.connect(lambda text: setattr(self, "simple_caption", text))
+        right_panel.addWidget(self.caption_input)
         
         self.submit_button = QPushButton("Export Cropped Videos")
         self.submit_button.clicked.connect(self.exporter.export_videos)
