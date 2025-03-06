@@ -4,6 +4,19 @@ from PyQt6.QtWidgets import QMessageBox
 class VideoExporter:
     def __init__(self, main_app):
         self.main_app = main_app
+        self.file_counter = 0  # Counter for incremental padding suffix
+
+    def write_caption(self, output_file):
+        """
+        If a simple caption was provided, write it into a .txt file with the same base name as output_file.
+        """
+        caption = getattr(self.main_app, 'simple_caption', '').strip()
+        if caption:
+            base, _ = os.path.splitext(output_file)
+            txt_file = base + ".txt"
+            with open(txt_file, "w") as f:
+                f.write(caption)
+            print(f"Exported caption for {output_file} to {txt_file}")
 
     def export_videos(self):
         # Check toggles and warn if needed.
@@ -37,12 +50,18 @@ class VideoExporter:
             uncropped_folder = os.path.join(self.main_app.folder_path, "uncropped")
             os.makedirs(uncropped_folder, exist_ok=True)
         
+        # Reset file counter for each export session
+        self.file_counter = 0
+
         # Loop through the video entries.
         for entry in self.main_app.video_files:
             video_path = entry["original_path"]
             display_name = entry["display_name"]
             crop = self.main_app.crop_regions.get(display_name)
-            prefix = self.main_app.export_prefix.strip() if self.main_app.export_prefix else ""
+
+            # Safely handle export_prefix
+            prefix = getattr(self.main_app, 'export_prefix', '').strip()
+
             # Instead of reading the check state from the QListWidget item,
             # use the export_enabled flag stored in the entry.
             if not entry.get("export_enabled", False):
@@ -73,11 +92,13 @@ class VideoExporter:
                         cropped_image_path = os.path.join(output_folder, cropped_image_name)
                         cv2.imwrite(cropped_image_path, cropped_frame)
                         print(f"Exported cropped image for {display_name} to {cropped_image_path}")
+                        self.write_caption(cropped_image_path)
                     if self.main_app.export_uncropped_checkbox.isChecked():
                         uncropped_image_name = f"{base_name}.png"
                         uncropped_image_path = os.path.join(uncropped_folder, uncropped_image_name)
                         cv2.imwrite(uncropped_image_path, frame)
                         print(f"Exported uncropped image for {display_name} to {uncropped_image_path}")
+                        self.write_caption(uncropped_image_path)
 
             if self.main_app.export_cropped_checkbox.isChecked() and crop:
                 x, y, w, h = crop
@@ -90,20 +111,54 @@ class VideoExporter:
                         h -= 1
                     if w % 2 != 0:
                         w -= 1
-                    output_name = display_name.replace('.', '_cropped.')
+                    # Apply prefix and 5-digit incremental padding suffix
+                    base_name, ext = os.path.splitext(display_name)
+                    prefix = getattr(self.main_app, 'export_prefix', '').strip()
+                    if prefix:
+                        self.file_counter += 1
+                        base_name = f"{prefix}_{self.file_counter:05d}"  # 5-digit padding
+                    else:
+                        base_name = f"{self.file_counter:05d}"  # 5-digit padding if no prefix
+
+                    output_name = f"{base_name}_cropped{ext}"
+
                     output_path = os.path.join(output_folder, output_name)
-                    (ffmpeg.input(video_path, ss=trim_start/fps, t=duration)
+                    # Calculate end_frame based on trim_start and trim_length
+                    end_frame = trim_start + self.main_app.trim_length
+                    (
+                        ffmpeg.input(video_path)
+                        .filter('trim', start_frame=trim_start, end_frame=end_frame)
+                        .filter('setpts', 'PTS-STARTPTS')
                         .filter('crop', w, h, x, y)
                         .filter('scale', self.main_app.longest_edge, -2)
-                        .output(output_path)
-                        .run(overwrite_output=True))
+                        .output(output_path, map_metadata='-1')  # Flush metadata
+                        .run(overwrite_output=True)
+                    )
                     print(f"Exported cropped {display_name} to {output_path}")
+                    self.write_caption(output_path)
 
             if self.main_app.export_uncropped_checkbox.isChecked():
-                uncropped_path = os.path.join(uncropped_folder, display_name)
-                (ffmpeg.input(video_path, ss=trim_start/fps, t=duration)
-                    .output(uncropped_path)
-                    .run(overwrite_output=True))
+                # Apply prefix and 5-digit incremental padding suffix
+                base_name, ext = os.path.splitext(display_name)
+                prefix = getattr(self.main_app, 'export_prefix', '').strip()
+                if prefix:
+                    self.file_counter += 1
+                    uncropped_name = f"{prefix}_{self.file_counter:05d}{ext}"  # 5-digit padding
+                else:
+                    uncropped_name = f"{self.file_counter:05d}{ext}"  # 5-digit padding if no prefix
+
+                uncropped_path = os.path.join(uncropped_folder, uncropped_name)
+
+                # Calculate end_frame based on trim_start and trim_length
+                end_frame = trim_start + self.main_app.trim_length
+                (
+                    ffmpeg.input(video_path)
+                    .filter('trim', start_frame=trim_start, end_frame=end_frame)
+                    .filter('setpts', 'PTS-STARTPTS')
+                    .output(uncropped_path, map_metadata='-1')  # Flush metadata
+                    .run(overwrite_output=True)
+                )
                 print(f"Exported uncropped {display_name} to {uncropped_path}")
+                self.write_caption(uncropped_path)
 
             cap.release()
