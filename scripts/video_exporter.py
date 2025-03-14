@@ -81,30 +81,34 @@ class VideoExporter:
                     base_name = os.path.splitext(display_name)[0]
                     prefix = getattr(self.main_app, 'export_prefix', '').strip()
 
-                    if crop:
-                        x, y, w, h = crop
-                        if x < 0 or y < 0 or w <= 0 or h <= 0 or x+w > orig_w or y+h > orig_h:
-                            print(f"Invalid crop region for {display_name}")
-                            continue
-                        cropped_frame = frame[y:y+h, x:x+w]
-                        if cropped_frame.size == 0:
-                            print(f"Empty crop region for {display_name}")
-                            continue
-
-                        # Full name replacement: use export_prefix with iteration if provided
-                        if prefix:
-                            self.file_counter += 1
-                            cropped_image_name = f"{prefix}_{self.file_counter:05d}_cropped.png"
-                        else:
-                            cropped_image_name = f"{base_name}_cropped.png"
-
-                        cropped_image_path = os.path.join(output_folder, cropped_image_name)
-                        cv2.imwrite(cropped_image_path, cropped_frame)
-                        print(f"Exported cropped image for {display_name} to {cropped_image_path}")
-                        self.write_caption(cropped_image_path)
-
-                    if self.main_app.export_uncropped_checkbox.isChecked():
-                        # Full name replacement for uncropped image export
+                    # Fallback: if neither export cropped nor export uncropped flags are ticked,
+                    # export both a cropped image (if valid crop exists) and an uncropped image.
+                    if (not self.main_app.export_cropped_checkbox.isChecked() and 
+                        not self.main_app.export_uncropped_checkbox.isChecked()):
+                        
+                        # Export cropped image to the "cropped" folder if a crop exists
+                        if crop:
+                            x, y, w, h = crop
+                            if x < 0 or y < 0 or w <= 0 or h <= 0 or x+w > orig_w or y+h > orig_h:
+                                print(f"Invalid crop region for {display_name}")
+                            else:
+                                cropped_frame = frame[y:y+h, x:x+w]
+                                if cropped_frame.size == 0:
+                                    print(f"Empty crop region for {display_name}")
+                                else:
+                                    if prefix:
+                                        self.file_counter += 1
+                                        cropped_image_name = f"{prefix}_{self.file_counter:05d}_cropped.png"
+                                    else:
+                                        cropped_image_name = f"{base_name}_cropped.png"
+                                    cropped_image_path = os.path.join(output_folder, cropped_image_name)
+                                    cv2.imwrite(cropped_image_path, cropped_frame)
+                                    print(f"Exported cropped image for {display_name} to {cropped_image_path}")
+                                    self.write_caption(cropped_image_path)
+                        
+                        # Export uncropped image to the "uncropped" folder
+                        uncropped_folder = os.path.join(self.main_app.folder_path, "uncropped")
+                        os.makedirs(uncropped_folder, exist_ok=True)
                         if prefix:
                             self.file_counter += 1
                             uncropped_image_name = f"{prefix}_{self.file_counter:05d}.png"
@@ -114,6 +118,40 @@ class VideoExporter:
                         cv2.imwrite(uncropped_image_path, frame)
                         print(f"Exported uncropped image for {display_name} to {uncropped_image_path}")
                         self.write_caption(uncropped_image_path)
+                    else:
+                        # Existing behavior when either export cropped or export uncropped flags are ticked.
+                        if crop and self.main_app.export_cropped_checkbox.isChecked():
+                            x, y, w, h = crop
+                            if x < 0 or y < 0 or w <= 0 or h <= 0 or x+w > orig_w or y+h > orig_h:
+                                print(f"Invalid crop region for {display_name}")
+                            else:
+                                cropped_frame = frame[y:y+h, x:x+w]
+                                if cropped_frame.size == 0:
+                                    print(f"Empty crop region for {display_name}")
+                                else:
+                                    if prefix:
+                                        self.file_counter += 1
+                                        cropped_image_name = f"{prefix}_{self.file_counter:05d}_cropped.png"
+                                    else:
+                                        cropped_image_name = f"{base_name}_cropped.png"
+                                    cropped_image_path = os.path.join(output_folder, cropped_image_name)
+                                    cv2.imwrite(cropped_image_path, cropped_frame)
+                                    print(f"Exported cropped image for {display_name} to {cropped_image_path}")
+                                    self.write_caption(cropped_image_path)
+                        if self.main_app.export_uncropped_checkbox.isChecked():
+                            uncropped_folder = os.path.join(self.main_app.folder_path, "uncropped")
+                            os.makedirs(uncropped_folder, exist_ok=True)
+                            if prefix:
+                                self.file_counter += 1
+                                uncropped_image_name = f"{prefix}_{self.file_counter:05d}.png"
+                            else:
+                                uncropped_image_name = f"{base_name}.png"
+                            uncropped_image_path = os.path.join(uncropped_folder, uncropped_image_name)
+                            cv2.imwrite(uncropped_image_path, frame)
+                            print(f"Exported uncropped image for {display_name} to {uncropped_image_path}")
+                            self.write_caption(uncropped_image_path)
+
+
 
 
 
