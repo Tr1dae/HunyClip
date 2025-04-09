@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QSlider, QGraphicsPixmapItem, QLineEdit, QSpinBox,
     QSizePolicy, QCheckBox, QListWidgetItem, QComboBox, QMessageBox
 )
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QIcon, QMouseEvent
+from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QIcon, QMouseEvent, QIntValidator
 from PyQt6.QtCore import Qt, QTimer
 
 # Custom scene (modified to use the new crop region)
@@ -112,7 +112,9 @@ class VideoCropper(QWidget):
         
         self.clip_length_label = QLabel("Clip Length: 0")
         left_panel.addWidget(self.clip_length_label)
-        self.trim_point_label = QLabel("Trim Point: 0")
+        self.trim_point_label = QLineEdit("0")
+        self.trim_point_label.setValidator(QIntValidator(0, 999999))
+        self.trim_point_label.editingFinished.connect(self.editor.trim_point_edited)
         left_panel.addWidget(self.trim_point_label)
         
         trim_layout = QHBoxLayout()
