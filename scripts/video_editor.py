@@ -84,7 +84,9 @@ class VideoEditor:
 
     def update_trim_label(self):
         val = self.main_app.slider.value()
-        self.main_app.trim_point_label.setText(f"Trim Point: {val}")
+        # Only update the text if it's different to prevent cursor jumping
+        if str(val) != self.main_app.trim_point_label.text():
+            self.main_app.trim_point_label.setText(str(val))
         self.main_app.trim_points[self.main_app.current_video] = val
         if self.main_app.trim_modified:
             self.main_app.check_current_video_item()
@@ -130,6 +132,29 @@ class VideoEditor:
         self.main_app.scene.addItem(self.main_app.current_rect)
         # Set the scene's crop_item pointer to the current region.
         self.main_app.scene.crop_item = self.main_app.current_rect
+
+    def trim_point_edited(self):
+        try:
+            new_value = int(self.main_app.trim_point_label.text())
+        except ValueError:
+            return
+            
+        # Validate the input
+        new_value = max(0, min(new_value, self.main_app.frame_count - 1))
+        
+        # Update the slider and video position
+        self.main_app.slider.setValue(new_value)
+        self.main_app.trim_points[self.main_app.current_video] = new_value
+        self.main_app.cap.set(cv2.CAP_PROP_POS_FRAMES, new_value)
+        
+        # Update the display
+        ret, frame = self.main_app.cap.read()
+        if ret:
+            self.display_frame(frame)
+        
+        # Mark as modified
+        self.main_app.trim_modified = True
+        self.main_app.check_current_video_item()
 
 
     def move_trim_to_click_position(self, event):
