@@ -7,6 +7,41 @@ from scripts.interactive_crop_region import InteractiveCropRegion  # New interac
 class VideoEditor:
     def __init__(self, main_app):
         self.main_app = main_app
+        self.playback_timer = QTimer()
+        self.playback_timer.timeout.connect(self.advance_frame)
+
+    def advance_frame(self):
+        if self.main_app.is_playing:
+            self.play_forward()
+        elif self.main_app.loop_playback:
+            self.loop_frame()
+
+    def loop_frame(self):
+        if not self.main_app.cap or not self.main_app.loop_playback:
+            self.stop_playback()
+            return
+
+        start_frame = self.main_app.trim_points.get(self.main_app.current_video, 0)
+        
+        # Calculate duration in seconds from export settings
+        duration_seconds = self.main_app.trim_length / self.main_app.export_fps
+        
+        # Determine the end frame in the source video
+        original_fps = self.main_app.cap.get(cv2.CAP_PROP_FPS)
+        if original_fps == 0: original_fps = 30 # Default
+        
+        end_frame = start_frame + int(duration_seconds * original_fps)
+        
+        current_frame = self.main_app.cap.get(cv2.CAP_PROP_POS_FRAMES)
+
+        if current_frame >= end_frame:
+            self.main_app.cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        
+        ret, frame = self.main_app.cap.read()
+        if ret:
+            self.display_frame(frame)
+        else:
+            self.stop_playback()
 
     def load_video(self, video_entry):
         video_path = video_entry["original_path"]
@@ -84,7 +119,9 @@ class VideoEditor:
 
     def update_trim_label(self):
         val = self.main_app.slider.value()
-        self.main_app.trim_point_label.setText(f"Trim Point: {val}")
+        # Only update the text if it's different to prevent cursor jumping
+        if str(val) != self.main_app.trim_point_label.text():
+            self.main_app.trim_point_label.setText(str(val))
         self.main_app.trim_points[self.main_app.current_video] = val
         if self.main_app.trim_modified:
             self.main_app.check_current_video_item()
@@ -130,6 +167,29 @@ class VideoEditor:
         self.main_app.scene.addItem(self.main_app.current_rect)
         # Set the scene's crop_item pointer to the current region.
         self.main_app.scene.crop_item = self.main_app.current_rect
+
+    def trim_point_edited(self):
+        try:
+            new_value = int(self.main_app.trim_point_label.text())
+        except ValueError:
+            return
+            
+        # Validate the input
+        new_value = max(0, min(new_value, self.main_app.frame_count - 1))
+        
+        # Update the slider and video position
+        self.main_app.slider.setValue(new_value)
+        self.main_app.trim_points[self.main_app.current_video] = new_value
+        self.main_app.cap.set(cv2.CAP_PROP_POS_FRAMES, new_value)
+        
+        # Update the display
+        ret, frame = self.main_app.cap.read()
+        if ret:
+            self.display_frame(frame)
+        
+        # Mark as modified
+        self.main_app.trim_modified = True
+        self.main_app.check_current_video_item()
 
 
     def move_trim_to_click_position(self, event):
@@ -182,15 +242,17 @@ class VideoEditor:
 
     def start_loop_playback(self):
         if self.main_app.cap and self.main_app.loop_playback:
-            start = self.main_app.trim_points[self.main_app.current_video]
-            end = start + self.main_app.trim_length
-            current_frame = self.main_app.cap.get(cv2.CAP_PROP_POS_FRAMES)
-            if current_frame >= end:
-                self.main_app.cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-            ret, frame = self.main_app.cap.read()
-            if ret:
-                self.display_frame(frame)
-                QTimer.singleShot(30, self.start_loop_playback)
+            self.main_app.is_playing = False # Ensure forward playback is off
+            
+            # Set the starting point for the loop
+            start_frame = self.main_app.trim_points.get(self.main_app.current_video, 0)
+            self.main_app.cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+            # Use original video FPS for playback timing
+            original_fps = self.main_app.cap.get(cv2.CAP_PROP_FPS)
+            if original_fps == 0: original_fps = 30 # Default
+            interval = int(1000 / original_fps)
+            self.playback_timer.start(interval)
 
     def toggle_play_forward(self):
         self.main_app.is_playing = not self.main_app.is_playing
@@ -201,6 +263,16 @@ class VideoEditor:
 
     def play_forward(self):
         if self.main_app.is_playing and self.main_app.cap:
+            self.main_app.loop_playback = False # Ensure loop is off
+
+            # Use original video FPS for playback timing
+            original_fps = self.main_app.cap.get(cv2.CAP_PROP_FPS)
+            if original_fps == 0: original_fps = 30
+            interval = int(1000 / original_fps)
+            
+            if not self.playback_timer.isActive() or self.playback_timer.interval() != interval:
+                self.playback_timer.start(interval)
+
             ret, frame = self.main_app.cap.read()
             if ret:
                 current_frame = int(self.main_app.cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -208,11 +280,14 @@ class VideoEditor:
                 self.main_app.slider.setValue(current_frame)
                 self.update_trim_label()
                 self.display_frame(frame)
-                QTimer.singleShot(30, self.play_forward)
+            else:
+                self.stop_playback()
+
 
     def stop_playback(self):
         self.main_app.is_playing = False
         self.main_app.loop_playback = False
+        self.playback_timer.stop()
         if self.main_app.cap:
             self.main_app.cap.set(cv2.CAP_PROP_POS_FRAMES, 
                                   self.main_app.trim_points.get(self.main_app.current_video, 0))

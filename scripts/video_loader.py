@@ -7,6 +7,8 @@ class VideoLoader:
     def __init__(self, main_app):
         self.main_app = main_app
         self.session_file = "session_data.json"
+        
+
 
     def load_folder(self):
         folder = QFileDialog.getExistingDirectory(self.main_app, "Select Folder")
@@ -69,6 +71,7 @@ class VideoLoader:
             item.setCheckState(Qt.CheckState.Unchecked)
         self.update_list_item_color(item)
         self.main_app.video_list.addItem(item)
+        return item
 
     def update_list_item_color(self, item):
         idx = self.main_app.video_list.row(item)
@@ -107,15 +110,41 @@ class VideoLoader:
             return
         current_idx = self.main_app.video_list.row(current_item)
         original_entry = self.main_app.video_files[current_idx]
-        base_name, ext = os.path.splitext(original_entry["display_name"])
-        # Start with the next copy number.
-        new_copy = original_entry["copy_number"] + 1
+
+        # Use the original filename (without extension) as the base for duplicates.
+        original_video_path = original_entry["original_path"]
+        base_name, ext = os.path.splitext(os.path.basename(original_video_path))
+
+        # Find all display names related to this original video.
+        related_display_names = [
+            entry["display_name"] for entry in self.main_app.video_files
+            if entry["original_path"] == original_video_path
+        ]
+        
+        # Find the highest existing copy number to avoid long chained names.
+        max_copy = 0
+        for name in related_display_names:
+            name_part, _ = os.path.splitext(name)
+            if name_part.startswith(base_name):
+                suffix = name_part[len(base_name):]
+                if suffix.startswith('_'):
+                    try:
+                        num = int(suffix[1:])
+                        if num > max_copy:
+                            max_copy = num
+                    except ValueError:
+                        # Suffix is not a simple number, e.g., "clip_custom".
+                        pass
+
+        new_copy = max_copy + 1
         new_display = f"{base_name}_{new_copy}{ext}"
-        # Check for name collisions.
+        
+        # In case of name collisions (e.g. manual rename), find next available number.
         existing_names = [entry["display_name"] for entry in self.main_app.video_files]
         while new_display in existing_names:
             new_copy += 1
             new_display = f"{base_name}_{new_copy}{ext}"
+
         new_entry = {
             "original_path": original_entry["original_path"],
             "display_name": new_display,
@@ -123,9 +152,16 @@ class VideoLoader:
             "export_enabled": original_entry.get("export_enabled", False)
         }
         self.main_app.video_files.append(new_entry)
-        self.add_video_item(new_display)
+        new_item = self.add_video_item(new_display)
+        
+        # Copy settings from the duplicated clip.
         self.main_app.crop_regions[new_display] = self.main_app.crop_regions.get(original_entry["display_name"], None)
         self.main_app.trim_points[new_display] = self.main_app.trim_points.get(original_entry["display_name"], 0)
+        
+        # Automatically select and load the new clip for immediate editing.
+        self.main_app.video_list.setCurrentItem(new_item)
+        self.load_video(new_item)
+        
         self.save_session()
 
     def clear_crop_region(self):

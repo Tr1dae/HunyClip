@@ -1,4 +1,3 @@
-# video_cropper.py
 import sys, os, cv2, ffmpeg, json, numpy as np
 from scripts.custom_graphics_view import CustomGraphicsView
 from PyQt6.QtWidgets import (
@@ -6,7 +5,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QSlider, QGraphicsPixmapItem, QLineEdit, QSpinBox,
     QSizePolicy, QCheckBox, QListWidgetItem, QComboBox, QMessageBox
 )
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QIcon, QMouseEvent
+from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QIcon, QMouseEvent, QIntValidator
 from PyQt6.QtCore import Qt, QTimer
 
 # Custom scene (modified to use the new crop region)
@@ -51,9 +50,14 @@ class VideoCropper(QWidget):
         self.export_uncropped = False
         self.export_image = False
         self.trim_modified = False
+        self.export_fps = 16
         
         # Session file
+        self.folder_sessions = {}
         self.session_file = "session_data.json"
+        
+        # New property for simple caption text.
+        self.simple_caption = ""
         
         # UI widgets
         self.video_list = QListWidget()
@@ -99,8 +103,6 @@ class VideoCropper(QWidget):
         self.video_list.itemChanged.connect(self.loader.update_list_item_color)
         left_panel.addWidget(self.video_list, 1)
 
-
-        
         self.duplicate_button = QPushButton("Duplicate Clip")
         self.duplicate_button.clicked.connect(self.loader.duplicate_clip)
         left_panel.addWidget(self.duplicate_button)
@@ -111,17 +113,29 @@ class VideoCropper(QWidget):
         
         self.clip_length_label = QLabel("Clip Length: 0")
         left_panel.addWidget(self.clip_length_label)
-        self.trim_point_label = QLabel("Trim Point: 0")
+        self.trim_point_label = QLineEdit("0")
+        self.trim_point_label.setValidator(QIntValidator(0, 999999))
+        self.trim_point_label.editingFinished.connect(self.editor.trim_point_edited)
         left_panel.addWidget(self.trim_point_label)
         
         trim_layout = QHBoxLayout()
         trim_layout.addWidget(QLabel("Trim Length (frames):"))
         self.trim_spin = QSpinBox()
         self.trim_spin.setValue(60)
-        self.trim_spin.setMaximum(999)
-        self.trim_spin.valueChanged.connect(lambda v: setattr(self, 'trim_length', v))
+        self.trim_spin.setMaximum(9999)
+        self.trim_spin.valueChanged.connect(self.trim_length_changed)
         trim_layout.addWidget(self.trim_spin)
         left_panel.addLayout(trim_layout)
+
+        fps_layout = QHBoxLayout()
+        fps_layout.addWidget(QLabel("Export FPS:"))
+        self.fps_spin = QSpinBox()
+        self.fps_spin.setValue(16)
+        self.fps_spin.setMinimum(1)
+        self.fps_spin.setMaximum(120)
+        self.fps_spin.valueChanged.connect(self.fps_changed)
+        fps_layout.addWidget(self.fps_spin)
+        left_panel.addLayout(fps_layout)
         
         self.export_cropped_checkbox = QCheckBox("Export Cropped Clips")
         self.export_cropped_checkbox.setChecked(False)
@@ -137,7 +151,6 @@ class VideoCropper(QWidget):
         
         main_layout.addLayout(left_panel, 1)
 
-        # self.video_list = QListWidget()
         self.video_list.setStyleSheet("QListWidget::item:selected { background-color: #3A4F7A; }")
         
         # RIGHT PANEL
@@ -182,10 +195,27 @@ class VideoCropper(QWidget):
         
         self.slider.installEventFilter(self)
         
+        export_settings_layout = QHBoxLayout()
+
+        # Longest Edge Input (Already Exists)
         self.resolution_input = QLineEdit()
         self.resolution_input.setPlaceholderText("Set longest edge (default 1024)")
         self.resolution_input.textChanged.connect(self.set_longest_edge)
-        right_panel.addWidget(self.resolution_input)
+        export_settings_layout.addWidget(self.resolution_input)
+
+        # New Filename Prefix Input
+        self.prefix_input = QLineEdit()
+        self.prefix_input.setPlaceholderText("Filename Replacement (Optional)")
+        self.prefix_input.textChanged.connect(lambda text: setattr(self, "export_prefix", text))
+        export_settings_layout.addWidget(self.prefix_input)
+
+        right_panel.addLayout(export_settings_layout)
+        
+        # New Simple Caption Input placed above the Export button
+        self.caption_input = QLineEdit()
+        self.caption_input.setPlaceholderText("Simple caption (Optional)")
+        self.caption_input.textChanged.connect(lambda text: setattr(self, "simple_caption", text))
+        right_panel.addWidget(self.caption_input)
         
         self.submit_button = QPushButton("Export Cropped Videos")
         self.submit_button.clicked.connect(self.exporter.export_videos)
@@ -193,6 +223,26 @@ class VideoCropper(QWidget):
         
         main_layout.addLayout(right_panel, 3)
     
+    def trim_length_changed(self, value):
+        self.trim_length = value
+
+    def fps_changed(self, value):
+        self.export_fps = value
+
+        # If playing, restart with new FPS
+        if self.editor.playback_timer.isActive():
+            # Stop and restart to re-evaluate loop duration
+            was_playing = self.is_playing
+            was_looping = self.loop_playback
+            self.editor.stop_playback()
+            
+            if was_playing:
+                self.is_playing = True
+                self.editor.toggle_play_forward()
+            elif was_looping:
+                self.loop_playback = True
+                self.editor.toggle_loop_playback()
+
     def set_aspect_ratio(self, ratio_name):
         ratio_value = self.aspect_ratios.get(ratio_name)
         self.scene.set_aspect_ratio(ratio_value)
